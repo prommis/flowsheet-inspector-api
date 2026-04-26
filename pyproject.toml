@@ -24,7 +24,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "idaes-pse>=2.10.0",
+    "idaes-pse @ git+https://github.com/IDAES/idaes-pse@main",
     "pyomo >=6.9.5",
 ]
 
@@ -48,6 +48,11 @@ idaes_fi = ["py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "unit: marks tests as unit tests",
+  "component: marks tests as component tests",
+  "integration: marks tests as integration tests",
+]
 
 [tool.mypy]
 python_version = "3.10"
