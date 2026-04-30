@@ -499,6 +499,9 @@ class CaptureSolverOutput(SolverActionBase):
     def step_failed(self, step_name: str, err: Exception):
         if self._save_stdout:
             sys.stdout = self._save_stdout
+            self._solver_out.flush()
+            # print stored stdout for debugging help
+            print(self._solver_out.getvalue())
 
     def report(self) -> Report:
         """Machine-readable report with solver output.

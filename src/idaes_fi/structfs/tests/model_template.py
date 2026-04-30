@@ -21,7 +21,7 @@ from idaes.core import FlowsheetBlock
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes_fi.structfs import FlowsheetRunner, Context
 
-_FS = FlowsheetRunner()
+_FS = FlowsheetRunner(name="my flowsheet", module=__name__)
 
 
 @_FS.step("build")

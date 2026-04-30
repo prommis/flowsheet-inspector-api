@@ -37,6 +37,23 @@ class ActionNames(Enum):
     TIMINGS = "timings"
 
 
+class Steps:
+    """Names of steps so that editor autocomplete, etc., will help
+    to avoid typos.
+    """
+
+    build = "build"
+    set_solver = "set_solver"
+    initialize = "initialize"
+    set_operating_conditions = "set_operating_conditions"
+    set_scaling = "set_scaling"
+    solve_initial = "solve_initial"
+    add_costing = "add_costing"
+    initialize_costing = "initialize_costing"
+    setup_optimization = "setup_optimization"
+    solve_optimization = "solve_optimization"
+
+
 def load_module(module_or_path: str | Path):
     """
     Load a module - supports both module names and file paths.

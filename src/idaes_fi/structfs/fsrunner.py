@@ -40,7 +40,14 @@ except ImportError:
 
 # package
 from .runner import Runner
-from .common import ActionNames, DEFAULT_SOLVER_NAME, RESULT_FLOWSHEET_KEY, load_module
+from .common import (
+    ActionNames,
+    DEFAULT_SOLVER_NAME,
+    RESULT_FLOWSHEET_KEY,
+    load_module,
+    Steps,
+)
+from .. import gitutil
 
 _log = logging.getLogger(__name__)
 
@@ -116,16 +123,16 @@ class BaseFlowsheetRunner(Runner):
     _SET_SOLVER_STEP = "set_solver"
 
     STEPS = (
-        "build",
-        "set_solver",
-        "initialize",
-        "set_operating_conditions",
-        "set_scaling",
-        "solve_initial",
-        "add_costing",
-        "initialize_costing",
-        "setup_optimization",
-        "solve_optimization",
+        Steps.build,
+        Steps.set_solver,
+        Steps.initialize,
+        Steps.set_operating_conditions,
+        Steps.set_scaling,
+        Steps.solve_initial,
+        Steps.add_costing,
+        Steps.initialize_costing,
+        Steps.setup_optimization,
+        Steps.solve_optimization,
     )
 
     def __init__(
@@ -134,6 +141,7 @@ class BaseFlowsheetRunner(Runner):
         tee=True,
         solver_options: dict | None = None,
         steps: Sequence[str] = None,
+        **target_kw,
     ):
         if steps is None:
             steps = self.STEPS
@@ -141,7 +149,17 @@ class BaseFlowsheetRunner(Runner):
         self._solver, self._tee = solver, tee
         self._solver_options = solver_options or {}
         self._ann = {}
-        super().__init__(steps)  # needs to be last
+        super().__init__(steps)  # needs to be here
+        # This allows things like 'name', 'module', and even 'tags', to be
+        # passed directly as keywords to the constructor
+        if target_kw:
+            try:
+                self.set_report_target(**target_kw)
+            except KeyError as err:
+                raise KeyError(
+                    f"Keyword argument to BaseFlowsheetRunner instance was not "
+                    f"a valid keyword for the report target: {err}"
+                )
 
     def set_solve_steps(self, solve_steps: Sequence[str]):
         """Set `solve_steps` for all contained actions which have this attribute."""
@@ -456,7 +474,7 @@ class FlowsheetRunner(BaseFlowsheetRunner):
 
 def run_flowsheet(
     module_or_path: str, fs_attr: str = "", step_kw: dict[str, str] = None, **kwargs
-) -> None:
+) -> BaseFlowsheetRunner:
     """Run structfs-wrapper flowsheet found in a file or module.
 
     Args:
@@ -466,17 +484,15 @@ def run_flowsheet(
         step_kw: Keywords sent to the `run_steps()` function, if applicable
         kwargs: Additional keyword arguments passed to fi_main, if applicable
 
+    Returns:
+        The flowsheet object that was run.
+
     Raises:
         ValueError, if no flowsheet is found, or no match to fs_attr
     """
     mod = load_module(module_or_path=module_or_path)
-    p = Path(mod.__file__)
-    target_kw = {
-        "module": mod.__name__,
-        "filename": p.name,
-        "filedir": str(p.parent.absolute()),
-    }
-    obj_map = global_flowsheet(mod)
+    target_kw = _module_target(mod)
+    obj_map = _find_global_flowsheet(mod)
     if obj_map:
         if fs_attr:
             if fs_attr not in obj_map:
@@ -492,24 +508,40 @@ def run_flowsheet(
                     "specified; using first."
                 )
             fs = list(obj_map.values())[0]
-        p = Path(mod.__file__)
         fs.set_report_target(**target_kw)
         if step_kw is None:
             step_kw = {}
         fs.run_steps(**step_kw)
     else:
-        func = wrapped_main(mod)
+        func = _find_wrapped_main(mod)
         if func is None:
             raise ValueError(
                 f"Could not find either a BaseFlowsheetRunner instance "
                 f"or a @fi_main wrapped function in: {module_or_path}"
             )
-        # kwargs.update(target_kw)
         # run the wrapped function, with user arguments
-        func(**kwargs)
+        # pick flowsheet out of return value, to return to caller
+        model, results = func(**kwargs)
+        fs = results[RESULT_FLOWSHEET_KEY]
+    return fs
 
 
-def global_flowsheet(a_module) -> dict[str, BaseFlowsheetRunner]:
+def _module_target(mod):
+    p = Path(mod.__file__)
+
+    target_kw = {
+        "module": mod.__name__,
+        "filename": p.name,
+        "filedir": str(p.parent.absolute()),
+    }
+    repo_hash = gitutil.git_head_hash(p)
+    if repo_hash is not None:
+        target_kw["hash"] = repo_hash
+
+    return target_kw
+
+
+def _find_global_flowsheet(a_module) -> dict[str, BaseFlowsheetRunner]:
     """Find a global flowsheet object.
     This is defined as the first object that is an instance of BaseFlowsheetRunner.
 
@@ -530,7 +562,7 @@ def global_flowsheet(a_module) -> dict[str, BaseFlowsheetRunner]:
     return obj_map
 
 
-def wrapped_main(a_module) -> FunctionType | None:
+def _find_wrapped_main(a_module) -> FunctionType | None:
     """Find a wrapped flowsheet main function.
 
     Returns:
@@ -575,7 +607,7 @@ if __name__ == "__main__":
         kwargs["step_kw"] = {"last": args.last}
 
     try:
-        run_flowsheet(args.name, **kwargs)
+        fs = run_flowsheet(args.name, **kwargs)
     except ValueError as err:
         print(f"ERROR: {str(err)}")
         sys.exit(1)
@@ -583,9 +615,7 @@ if __name__ == "__main__":
     # unless the user requests, print solver output
     # (that we captured to the DB)
     if not args.quiet:
-        from .reportdb import ReportDB
-
-        rpt = Runner.get_report_db().get_last_report()
+        rpt = fs.get_report_db().get_last_report()
         solver_out_steps = rpt["actions"][ActionNames.SOLVER_OUTPUT.value]["output"]
         for step_name, output in solver_out_steps.items():
             o = output.strip()

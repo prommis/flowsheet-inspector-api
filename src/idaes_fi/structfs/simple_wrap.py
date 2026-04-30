@@ -137,7 +137,7 @@ class _Wrapper:
     def _build(ctx):
         model, solve_result = _FS.main_func(*_FS.main_func_args, **_FS.main_func_kwargs)
         ctx.model = model
-        ctx.solve()
+        ctx.results = solve_result
 
     @classmethod
     def main(cls, solve=True, **main_kw):
@@ -166,6 +166,9 @@ class _Wrapper:
                     main_file_path = Path(main_file).absolute()
                     main_kw["filename"] = main_file_path.name
                     main_kw["filedir"] = str(main_file_path.parent)
+                # allow user to pass in alternate database file to main()
+                if "dbfile" in kwargs:
+                    _FS.set_report_db(dbfile=kwargs.pop("dbfile"))
                 _FS.main_func = main_fn
                 _FS.main_func_args = args
                 _FS.main_func_kwargs = kwargs
@@ -173,8 +176,9 @@ class _Wrapper:
                 # run the flowsheet
                 _FS.run_steps()
                 # stash object in result dict under 'special' key
-                _FS.results[RESULT_FLOWSHEET_KEY] = _FS
-                return _FS.model, _FS.results
+                results = _FS.results
+                results[RESULT_FLOWSHEET_KEY] = _FS
+                return _FS.model, results
 
             return fi_wrapper
 

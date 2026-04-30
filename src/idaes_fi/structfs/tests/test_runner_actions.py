@@ -44,6 +44,12 @@ from ..runner_actions import (
 from . import flash_flowsheet
 
 
+@pytest.fixture
+def set_tmp_db(tmp_path):
+    dbpath = tmp_path / "test_runner_actions.db"
+    flash_flowsheet.FS.set_report_db(dbfile=dbpath)
+
+
 @pytest.mark.unit
 def test_class_timer(monkeypatch):
     def step_name(i):
@@ -110,7 +116,7 @@ def test_class_timer(monkeypatch):
 
 
 @pytest.mark.unit
-def test_unit_dof_action_base():
+def test_unit_dof_action_base(set_tmp_db):
     rn = flash_flowsheet.FS
     rn.reset()
 
@@ -138,7 +144,7 @@ def test_unit_dof_action_base():
 
 
 @pytest.mark.unit
-def test_unit_dof_action_getters():
+def test_unit_dof_action_getters(set_tmp_db):
     rn = flash_flowsheet.FS
     rn.reset()
 
@@ -165,7 +171,7 @@ def test_unit_dof_action_getters():
 
 
 @pytest.mark.unit
-def test_dof_report():
+def test_dof_report(set_tmp_db):
     rn = flash_flowsheet.FS
     rn.reset()
     check_steps = (
@@ -187,7 +193,7 @@ def test_dof_report():
 
 
 @pytest.mark.unit
-def test_mermaid_report():
+def test_mermaid_report(set_tmp_db):
     rn = flash_flowsheet.FS
     rn.reset()
     rn.add_action("diagram", MermaidDiagram)
@@ -204,15 +210,16 @@ def test_mermaid_report():
 
 
 @pytest.mark.unit
-def test_stream_table_action_create():
+def test_stream_table_action_create(set_tmp_db):
     obj = StreamTable(flash_flowsheet.FS)
     assert obj
 
 
 @pytest.mark.unit
-def test_stream_table_action_report():
+def test_stream_table_action_report(tmp_path):
     rn = hda_flowsheet.FS  # need a flowsheet with Arcs
     rn.reset()
+    rn.set_report_db(dbfile=tmp_path / "stream_table.db")
     rn._actions = {}  # no other actions
     rn.add_action("streamtable", StreamTable)
     rn.build()  # don't need to solve

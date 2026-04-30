@@ -21,6 +21,12 @@ from idaes.core.util.doctesting import Docstring
 simple = Runner(("notrun-1", "hello", "hello.dude", "world", "notrun-2"))
 
 
+@pytest.fixture
+def tmp_simple_db(tmp_path):
+    dbpath = tmp_path / "test_runner_simple.db"
+    simple.set_report_db(dbfile=dbpath)
+
+
 @simple.step("hello")
 def say_hello(context):
     context["greeting"] = "Hello"
@@ -41,11 +47,18 @@ def say_to_world(context):
 
 empty = Runner(("hi", "bye"))
 
+
+@pytest.fixture
+def tmp_empty_db(tmp_path):
+    dbpath = tmp_path / "test_runner_empty.db"
+    empty.set_report_db(dbfile=dbpath)
+
+
 # -- end setup --
 
 
 @pytest.mark.unit
-def test_simple_run_all():
+def test_simple_run_all(tmp_simple_db):
     simple.run_steps()
     assert simple._context["greeting"] == "Hello, World!"
 
@@ -68,19 +81,19 @@ def test_runner_actions():
 
 
 @pytest.mark.unit
-def test_run_steps_order():
+def test_run_steps_order(tmp_simple_db):
     with pytest.raises(ValueError):
         simple.run_steps("world", "hello")
 
 
 @pytest.mark.unit
-def test_run_steps_args():
+def test_run_steps_args(tmp_simple_db):
     simple.run_steps(first="hello")
     simple.run_steps(last="world")
 
 
 @pytest.mark.unit
-def test_run_1step():
+def test_run_1step(tmp_simple_db):
     simple.run_step("hello")
 
 
@@ -133,7 +146,7 @@ exec(Docstring(runner_actions.Action.__doc__).code("runner-hellogoodbye-class"))
 
 
 @pytest.mark.unit
-def test_hellogoodbye():
+def test_hellogoodbye(tmp_simple_db):
     simple.add_action(
         "hg",
         HelloGoodbye,
@@ -164,7 +177,7 @@ class DelegatingAction(Action):
 
 
 @pytest.mark.unit
-def test_runaction():
+def test_runaction(tmp_simple_db):
     simple.reset()
     simple.add_action("foo", RunActionExample)
     simple.run_steps()
@@ -172,9 +185,10 @@ def test_runaction():
 
 
 @pytest.mark.unit
-def test_run_steps_conflicting_args_and_endpoint_skip():
+def test_run_steps_conflicting_args_and_endpoint_skip(tmp_path):
     calls = []
     rn = Runner(("a", "b", "c"))
+    rn.set_report_db(dbfile=tmp_path / "test_runner_rn.sqlite")
 
     @rn.step("a")
     def step_a(ctx):
@@ -200,16 +214,18 @@ def test_run_steps_conflicting_args_and_endpoint_skip():
 
 
 @pytest.mark.unit
-def test_find_step_no_defined_steps_and_normalize_name():
+def test_find_step_no_defined_steps_and_normalize_name(tmp_path):
     rn = Runner(("a", "b"))
+    rn.set_report_db(dbfile=tmp_path / "test_runner_rn.sqlite")
     assert rn._find_step() == -1
     assert rn._find_step(reverse=True) == -1
     assert rn.normalize_name(None) == Runner.STEP_ANY
 
 
 @pytest.mark.unit
-def test_runner_report_with_model_and_dict_actions():
+def test_runner_report_with_model_and_dict_actions(tmp_path):
     rn = Runner(("run",))
+    rn.set_report_db(dbfile=tmp_path / "test_runner_rn.sqlite")
 
     @rn.step("run")
     def do_run(ctx):

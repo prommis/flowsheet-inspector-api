@@ -16,6 +16,7 @@ Run functions in a module in a defined, named, sequence.
 
 # stdlib
 from abc import ABC, abstractmethod
+import importlib
 import logging
 from pathlib import Path
 import traceback
@@ -28,6 +29,7 @@ from pydantic import BaseModel
 from idaes.config import get_data_directory
 from .reportdb import ReportDB
 from .common import ActionNames
+from .. import gitutil
 
 __author__ = "Dan Gunter (LBNL)"
 
@@ -75,6 +77,7 @@ class Runner:
 
         Args:
             steps: List of step names
+            report_db: Report database to use (otherwise default one)
         """
         self._context = {}
         self._actions: dict[str, ActionType] = {}
@@ -83,16 +86,74 @@ class Runner:
         self._failed = False
         self.reset()
         self._tags = ""  # for reporting
-        self._report_db = report_db or self._get_default_report_db(create=True)
+        self._report_db = report_db or self.get_default_report_db(create=True)
+
+    def get_report_db(self) -> ReportDB:
+        """Get current report database.
+
+        Returns:
+            ReportDB: Default report DB instance
+        """
+        return self._report_db
+
+    def set_report_db(
+        self,
+        db: Optional[ReportDB] = None,
+        dbfile: Optional[Path | str] = None,
+        create: bool = True,
+    ) -> ReportDB:
+        """Set a new value for the report database.
+
+        Args:
+            db: New report database
+            dbfile: Path to reportdb file.
+            create: Create report database if it does not exist.
+
+        Returns:
+            ReportDB: Previous report database
+
+        Raises:
+            ValueError: If neither argument is provided
+        """
+        if db is None:
+            # Get ReportDB from path
+            if dbfile is None:
+                raise ValueError("Either a `db` or `dbfile` argument is required")
+            # get a ReportDB instance, creating DB if necessary and allowed
+            do_create = False
+            if not dbfile.exists():
+                if create:
+                    do_create = True
+                else:
+                    raise ValueError(
+                        f"Database file `{dbfile}` does not exist and `create` flag is False"
+                    )
+            db = ReportDB(dbfile)
+            if do_create:
+                db.create()
+
+        assert isinstance(db, ReportDB)
+        prev, self._report_db = self._report_db, db
+
+        prev_tgt = prev.get_target()
+        if prev_tgt:
+            self._report_db.set_target(**prev_tgt)
+
+        return prev
 
     @classmethod
-    def get_report_db(cls):
-        """Get (default) report database"""
-        return cls._get_default_report_db(create=False)
+    def get_default_report_db(cls, create=False) -> ReportDB:
+        """Get the default report database.
 
-    @staticmethod
-    def _get_default_report_db(create=False):
+        Args:
+            create (bool, optional): If true, create it if not found. Defaults to False.
 
+        Raises:
+            ValueError: If create is False and the database is not found
+
+        Returns:
+            ReportDB: Default report DB instance
+        """
         # get IDAES home directory
         data_dir, _, _ = get_data_directory()
         data_path = Path(data_dir)
@@ -121,6 +182,8 @@ class Runner:
         """For attributes not in the class, look to see if they
         match attributes on the context and if so return that value.
         """
+        if key and key[0] == "_":
+            raise AttributeError(key)
         if hasattr(self._context, key):
             return getattr(self._context, key)
         raise AttributeError(
@@ -230,6 +293,34 @@ class Runner:
     ):
         names = (self.normalize_name(first), self.normalize_name(last))
 
+        # Try to complete the report target, from value of 'module'
+        tgt = self.get_report_target()
+        if "module" in tgt:
+            tgt_changed = False
+            try:
+                modname = tgt["module"]
+                if modname:
+                    mod = importlib.import_module(modname)
+                else:
+                    mod = None
+            except ImportError as err:
+                print(f"@@ import failed: {err}")
+                _log.error(f"Cannot import module {modname}")
+                mod = None
+            if mod:
+                p = Path(mod.__file__)
+                if not tgt.get("filename", "") and not tgt.get("filedir", ""):
+                    tgt["filename"] = p.name
+                    tgt["filedir"] = str(p.parent.absolute())
+                    tgt_changed = True
+                if not tgt.get("hash", ""):
+                    repo_hash = gitutil.git_head_hash(p)
+                    if repo_hash is not None:
+                        tgt["hash"] = repo_hash
+                        tgt_changed = True
+            if tgt_changed:
+                self.set_report_target(**tgt)
+
         self._last_run_steps = []
 
         # get indexes of first/last step
@@ -326,6 +417,9 @@ class Runner:
         self._tags = target_kw.pop("tags", "")  # I'm gonna pop some tags..
         _log.debug(f"Set report target to: {target_kw}")
         self._report_db.set_target(**target_kw)
+
+    def get_report_target(self) -> dict:
+        return self._report_db.get_target()
 
     def reset(self):
         """Reset runner internal state, especially the context."""

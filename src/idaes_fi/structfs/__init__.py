@@ -254,6 +254,7 @@ treatment in display, etc. with the
 ```
 
 '''
+
 __all__ = ["FlowsheetRunner", "Runner", "fi_main", "get_report_db"]
 
 # Lazy exports, to avoid warnings when importing fsrunner, etc.
@@ -280,7 +281,7 @@ def fi_main(*args, **kwargs):
     return _Wrapper.main(*args, **kwargs)
 
 
-def get_report_db(*args, **kwargs):
+def get_default_report_db():
     from .runner import Runner
 
-    return Runner.get_report_db(*args, **kwargs)
+    return Runner.get_default_report_db()
