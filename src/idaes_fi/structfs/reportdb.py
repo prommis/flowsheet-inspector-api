@@ -21,7 +21,7 @@ import time
 
 __author__ = "Dan Gunter (LBNL)"
 
-_log = logging.Logger(__name__)
+_log = logging.getLogger(__name__)
 
 
 class ReportDB:

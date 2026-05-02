@@ -255,7 +255,11 @@ treatment in display, etc. with the
 
 '''
 
+import logging
+
 __all__ = ["FlowsheetRunner", "Runner", "fi_main", "get_report_db"]
+
+_log = logging.getLogger(__name__)
 
 # Lazy exports, to avoid warnings when importing fsrunner, etc.
 # using e.g. `python -m`

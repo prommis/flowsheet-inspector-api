@@ -34,6 +34,7 @@ dev = [
   "mypy>=1.10",
   "mystmd>=1.8.3",
   "jupyter-book>=2.0.0",
+  "sphinx-autodoc2>=0.5",
   "pytest>=8",
   "black>=26",
 ]

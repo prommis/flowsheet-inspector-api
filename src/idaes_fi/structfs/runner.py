@@ -28,12 +28,12 @@ from pydantic import BaseModel
 # package
 from idaes.config import get_data_directory
 from .reportdb import ReportDB
-from .common import ActionNames
+from .common import ActionNames, Steps
 from .. import gitutil
 
 __author__ = "Dan Gunter (LBNL)"
 
-_log = logging.Logger(__name__)
+_log = logging.getLogger(__name__)
 
 
 class Step:
@@ -251,6 +251,7 @@ class Runner:
         last: str = "",
         after: str = "",
         before: str = "",
+        closest_step=False,
         save_report=True,
     ):
         """Run steps from `first`/`after` to step `last`/`before`.
@@ -264,6 +265,8 @@ class Runner:
             after: Run first defined step after this one (exclude)
             last: Last step to run (include)
             before: Run last defined step before this one (exclude)
+            closest_step: If True, and step given is empty, that's ok since we will run the closest step;
+                          If False, require that the specified steps be non-empty (default)
             save_report: If true save report in report database, if False don't do this
 
         Raises:
@@ -280,16 +283,14 @@ class Runner:
             first or after,
             last or before,
             (bool(first) or not bool(after), bool(last) or not bool(before)),
+            closest_step,
         )
         self._run_steps(*args)
         if save_report:
             self._save_report()
 
     def _run_steps(
-        self,
-        first: str,
-        last: str,
-        endpoints: tuple[bool, bool],
+        self, first: str, last: str, endpoints: tuple[bool, bool], closest: bool
     ):
         names = (self.normalize_name(first), self.normalize_name(last))
 
@@ -304,21 +305,34 @@ class Runner:
                 else:
                     mod = None
             except ImportError as err:
-                print(f"@@ import failed: {err}")
                 _log.error(f"Cannot import module {modname}")
                 mod = None
             if mod:
-                p = Path(mod.__file__)
-                if not tgt.get("filename", "") and not tgt.get("filedir", ""):
-                    tgt["filename"] = p.name
-                    tgt["filedir"] = str(p.parent.absolute())
-                    tgt_changed = True
-                if not tgt.get("hash", ""):
-                    repo_hash = gitutil.git_head_hash(p)
-                    if repo_hash is not None:
-                        tgt["hash"] = repo_hash
+                p = None
+                if mod.__name__ == "__main__":
+                    # if in VSCode, use special attr
+                    nb_path = getattr(mod, "__vsc_ipynb_file__")
+                    if nb_path:
+                        p = Path(nb_path)
+                        # clear any existing values
+                        tgt.update({"filename": "", "filedir": ""})
+                else:
+                    try:
+                        p = Path(mod.__file__)
+                    except AttributeError as err:
+                        _log.warning(f"Cannot set file for module '{mod}': {err}")
+                if p is not None:
+                    if not tgt.get("filename", "") and not tgt.get("filedir", ""):
+                        tgt["filename"] = p.name
+                        tgt["filedir"] = str(p.parent.absolute())
                         tgt_changed = True
+                    if not tgt.get("hash", ""):
+                        repo_hash = gitutil.git_head_hash(p)
+                        if repo_hash is not None:
+                            tgt["hash"] = repo_hash
+                            tgt_changed = True
             if tgt_changed:
+                _log.debug(f"setting report target: {tgt}")
                 self.set_report_target(**tgt)
 
         self._last_run_steps = []
@@ -336,7 +350,12 @@ class Runner:
                 except ValueError:
                     raise KeyError(f"Unknown step: {step_name}")
                 if step_name not in self._steps:
-                    raise KeyError(f"Empty step: {step_name}")
+                    if closest:
+                        _log.warning(
+                            f"Step {step_name} is empty, will run closest step"
+                        )
+                    else:
+                        raise KeyError(f"Empty step: {step_name}")
             step_range[i] = idx
 
         # check that first comes before last

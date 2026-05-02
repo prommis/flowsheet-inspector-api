@@ -588,11 +588,22 @@ def _find_wrapped_main(a_module) -> FunctionType | None:
 
 
 def main(args=None):
-    """Run a flowsheet from the command-line"""
+    """Run a flowsheet from the command-line."""
     ap = argparse.ArgumentParser(description=main.__doc__)
-    ap.add_argument("name")
-    ap.add_argument("--attr", default=None)
-    ap.add_argument("--last", default=None)
+    ap.add_argument("name", help="Flowsheet file name or module name")
+    ap.add_argument(
+        "--attr",
+        default=None,
+        help="Name of attribute in file/module "
+        "containing structured flowsheet (e.g., 'FS'). "
+        "This is only needed if there is more than one.",
+    )
+    steppenlist = ", ".join(Steps.index.values())
+    ap.add_argument(
+        "--last",
+        default=None,
+        help=f"Name of last step to run. Steps (in order): {steppenlist}",
+    )
     ap.add_argument(
         "-q",
         "--quiet",
@@ -600,19 +611,42 @@ def main(args=None):
         default=False,
         help="Don't print extra info",
     )
+    ap.add_argument(
+        "-v", action="count", default=0, help="increase verbosity", dest="vb"
+    )
     args = ap.parse_args(args=args)
+
+    log = logging.getLogger("idaes_fi")
+    h = logging.StreamHandler()
+    h.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] fi-run: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    log.addHandler(h)
+    if args.vb > 1:
+        log.setLevel(logging.DEBUG)
+    elif args.vb == 1:
+        log.setLevel(logging.INFO)
+    else:
+        if args.quiet:
+            log.setLevel(logging.ERROR)
+        else:
+            log.setLevel(logging.WARNING)
+    log.propagate = False
 
     kwargs = {}
     if args.attr is not None:
         kwargs["fs_attr"] = args.attr
     if args.last is not None:
-        kwargs["step_kw"] = {"last": args.last}
+        kwargs["step_kw"] = {"last": args.last, "closest_step": True}
 
     try:
         fs = run_flowsheet(args.name, **kwargs)
     except ValueError as err:
         print(f"ERROR: {str(err)}")
-        sys.exit(1)
+        return 1
 
     # unless the user requests, print solver output
     # (that we captured to the DB)
