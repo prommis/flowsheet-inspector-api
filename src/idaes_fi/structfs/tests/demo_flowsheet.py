@@ -505,6 +505,8 @@ if __name__ == "__main__":
 
     initialize_flowsheet(m)
 
-    solve_flowsheet(m, stee=True)
+    solver = get_solver()
+
+    solve_flowsheet(m, solver, stee=True)
 
     display_results(m)

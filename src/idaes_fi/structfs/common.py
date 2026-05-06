@@ -14,6 +14,7 @@
 Common constants and functions
 """
 
+from collections import OrderedDict
 from enum import Enum
 import importlib
 from pathlib import Path
@@ -48,10 +49,29 @@ class Steps:
     set_operating_conditions = "set_operating_conditions"
     set_scaling = "set_scaling"
     solve_initial = "solve_initial"
+    set_autoscaling = "set_autoscaling"
     add_costing = "add_costing"
     initialize_costing = "initialize_costing"
     setup_optimization = "setup_optimization"
     solve_optimization = "solve_optimization"
+
+    index = (
+        build,
+        set_solver,
+        initialize,
+        set_operating_conditions,
+        set_scaling,
+        solve_initial,
+        set_autoscaling,
+        add_costing,
+        initialize_costing,
+        setup_optimization,
+        solve_optimization,
+    )
+
+    @classmethod
+    def __len__(cls):
+        return len(cls.index)
 
 
 def load_module(module_or_path: str | Path):

@@ -18,10 +18,11 @@ import json
 import logging
 import sqlite3
 import time
+from contextlib import contextmanager
 
 __author__ = "Dan Gunter (LBNL)"
 
-_log = logging.Logger(__name__)
+_log = logging.getLogger(__name__)
 
 
 class ReportDB:
@@ -61,12 +62,17 @@ class ReportDB:
         + list(TARGET_COLUMNS)
     )
 
-    def __init__(self, filename, **target_kw):
+    def __init__(self, filename: str, **target_kw):
         self._filename = filename
         self._tgtcol = [name for name, type_ in self.TARGET_COLUMNS]
         self._tgtval = {k: "" for k in self._tgtcol}
         if target_kw:
             self.set_target(**target_kw)
+
+    @property
+    def filename(self) -> str:
+        """Get current report filename."""
+        return self._filename
 
     def set_target(self, **kw):
         """Set default target metadata for future queries and inserts.
@@ -91,13 +97,22 @@ class ReportDB:
         """Get (a copy of) the target keywords, as a dict {column: value}"""
         return self._tgtval.copy()
 
+    @contextmanager
     def _connect(self):
+        if _log.isEnabledFor(logging.DEBUG):
+            _log.debug("Connecting to SQLite database: {self._filename}")
         try:
             conn = sqlite3.connect(self._filename)
         except sqlite3.OperationalError as err:
             _log.error(f"Cannot connect to report database '{self._filename}' ({err})")
             raise RuntimeError(err)
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+            if _log.isEnabledFor(logging.DEBUG):
+                _log.debug("Done with SQLite database: {self._filename}")
 
     def create(self, drop=False):
         """Create the reports table in the database.
@@ -115,7 +130,6 @@ class ReportDB:
                 conn.execute(f"DROP TABLE {self.TABLE};")
             create_cols = self._all_columns(typed=True)
             conn.execute(f"CREATE TABLE {self.TABLE} ( {', '.join(create_cols)} );")
-            conn.commit()
 
     def _all_columns(self, typed=False, exclude=None):
         result = []
@@ -191,7 +205,6 @@ class ReportDB:
             cur.execute(stmt, colvalues)
             # cleanup
             cur.close()
-            conn.commit()
 
     def get_metadata(self, tags: str = "", **target_kw):
         """Yield metadata rows for reports matching the provided filters.

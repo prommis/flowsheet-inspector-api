@@ -12,31 +12,15 @@
 #################################################################################
 
 # stdlib
-from io import StringIO
-import logging
 import pprint
-import sys
 import time
-from types import SimpleNamespace
 
 import pytest
 from pytest import approx
-import pyomo.environ as pyo
-from pyomo.network import Port
 from .. import runner
 from . import flash_flowsheet, hda_flowsheet
-from ..fsrunner import FlowsheetRunner
 from ..runner_actions import (
-    ComponentList,
-    SolverActionBase,
-    CaptureSolverOutput,
-    SolverResult,
-    GetSolverResults,
-    Diagnostics,
     MermaidDiagram,
-    ModelVariables,
-    NumericalIssuesData,
-    StructuralIssuesData,
     Timer,
     UnitDofChecker,
     StreamTable,

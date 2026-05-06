@@ -65,69 +65,7 @@ _FS = SimpleFlowsheetRunner()
 
 
 class _Wrapper:
-    """
-    ### Usage
-
-    The functionality of the API is imported with the name `fi_main`
-    in the `idaes_fi.structfs` package, so normal usage requires only a
-    single function, listed as `my_main_function()` in the example below
-    (some extra classes and functions are added so this can be a self-contained and
-    working example):
-    ```{code} python
-    :caption: Simple Wrapper Usage
-
-    from idaes_fi.structfs import fi_main
-
-    @fi_main()
-    def my_main_function(some, args, keyword=None): # can take any arguments
-        # build the flowsheet -> model
-        model = build_flowsheet()
-        # initialize the flowsheet
-        # solve the flowsheet -> solve_result
-        solve_result = solve_flowsheet()
-
-        # **Important!**: return the model and solve result as a tuple
-        return model, solve_result
-
-
-    #------------------------------------------------------------------
-
-    # Some classes so the build/solve can nominally succeed
-
-    class FakeFlowsheet:
-        is_indexed = lambda x: False
-        def component_data_objects(self, *arg, **kw):
-            return []
-        def component_objects(self, *arg, **kw):
-            return []
-
-    class FakeModel:
-        fs = FakeFlowsheet()
-        def component_objects(self, *arg, **kw):
-            return []
-
-    # Fake build and solve functions
-
-    def build_flowsheet():
-        # Fake build of flowsheet
-        return FakeModel()
-
-    def solve_flowsheet():
-        # Fake solve of flowsheet
-        return {}
-
-    ```
-    So, in summary, the steps to enable your flowsheets are:
-
-    1. Create a function that returns the tuple `(model, solve_result)` after
-       building and solving the model.
-
-    2. Add the import statement `from idaes_fi.structfs import fi_main` and
-       then decorate the function in (1) with  `@fi_main`
-
-    That's it! Now the Flowsheet Inspector can run your flowsheet and show the diagram,
-    model variables, degrees of freedom, diagnostics, etc.
-    """
+    """Wrapper to create fi_main() decorator."""
 
     MAIN_STEP_NAME = "build"
 

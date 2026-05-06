@@ -1,0 +1,22 @@
+version: 1
+
+project:
+  title: Flowsheet Inspector Library Documentation
+  description: Documentation for the idaes-fi Python package.
+  authors:
+    - name: PrOMMiS contributors
+  toc:
+    - file: index.md
+    - file: usage.md
+    - file: usage_nb.ipynb
+    - file: api.md
+  github: prommis/flowsheet-inspector-lib
+
+site:
+  title: Flowsheet Inspector Library Documentation
+  options:
+    #logo: images/logo-text-black.png
+    #logo_dark: images/logo-text-white.png
+    logo: images/logo-symbol-fi.png
+    logo_dark: images/logo-symbol-fi.png
+  template: book-theme

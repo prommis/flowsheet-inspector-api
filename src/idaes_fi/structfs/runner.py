@@ -28,12 +28,12 @@ from pydantic import BaseModel
 # package
 from idaes.config import get_data_directory
 from .reportdb import ReportDB
-from .common import ActionNames
+from .common import ActionNames, Steps
 from .. import gitutil
 
 __author__ = "Dan Gunter (LBNL)"
 
-_log = logging.Logger(__name__)
+_log = logging.getLogger(__name__)
 
 
 class Step:
@@ -84,9 +84,18 @@ class Runner:
         self._step_names = list(steps)
         self._steps: dict[str, Step] = {}
         self._failed = False
+        self._actions_failed = {}
         self.reset()
         self._tags = ""  # for reporting
         self._report_db = report_db or self.get_default_report_db(create=True)
+
+    @property
+    def failed(self) -> bool:
+        return bool(self._failed)
+
+    @property
+    def failed_actions(self) -> dict[str, str]:
+        return self._actions_failed.copy()
 
     def get_report_db(self) -> ReportDB:
         """Get current report database.
@@ -121,6 +130,7 @@ class Runner:
                 raise ValueError("Either a `db` or `dbfile` argument is required")
             # get a ReportDB instance, creating DB if necessary and allowed
             do_create = False
+            dbfile = Path(dbfile)
             if not dbfile.exists():
                 if create:
                     do_create = True
@@ -251,6 +261,7 @@ class Runner:
         last: str = "",
         after: str = "",
         before: str = "",
+        closest_step=False,
         save_report=True,
     ):
         """Run steps from `first`/`after` to step `last`/`before`.
@@ -264,6 +275,8 @@ class Runner:
             after: Run first defined step after this one (exclude)
             last: Last step to run (include)
             before: Run last defined step before this one (exclude)
+            closest_step: If True, and step given is empty, that's ok since we will run the closest step;
+                          If False, require that the specified steps be non-empty (default)
             save_report: If true save report in report database, if False don't do this
 
         Raises:
@@ -280,16 +293,14 @@ class Runner:
             first or after,
             last or before,
             (bool(first) or not bool(after), bool(last) or not bool(before)),
+            closest_step,
         )
         self._run_steps(*args)
         if save_report:
             self._save_report()
 
     def _run_steps(
-        self,
-        first: str,
-        last: str,
-        endpoints: tuple[bool, bool],
+        self, first: str, last: str, endpoints: tuple[bool, bool], closest: bool
     ):
         names = (self.normalize_name(first), self.normalize_name(last))
 
@@ -304,21 +315,34 @@ class Runner:
                 else:
                     mod = None
             except ImportError as err:
-                print(f"@@ import failed: {err}")
                 _log.error(f"Cannot import module {modname}")
                 mod = None
             if mod:
-                p = Path(mod.__file__)
-                if not tgt.get("filename", "") and not tgt.get("filedir", ""):
-                    tgt["filename"] = p.name
-                    tgt["filedir"] = str(p.parent.absolute())
-                    tgt_changed = True
-                if not tgt.get("hash", ""):
-                    repo_hash = gitutil.git_head_hash(p)
-                    if repo_hash is not None:
-                        tgt["hash"] = repo_hash
+                p = None
+                if mod.__name__ == "__main__":
+                    # if in VSCode, use special attr
+                    nb_path = getattr(mod, "__vsc_ipynb_file__")
+                    if nb_path:
+                        p = Path(nb_path)
+                        # clear any existing values
+                        tgt.update({"filename": "", "filedir": ""})
+                else:
+                    try:
+                        p = Path(mod.__file__)
+                    except AttributeError as err:
+                        _log.warning(f"Cannot set file for module '{mod}': {err}")
+                if p is not None:
+                    if not tgt.get("filename", "") and not tgt.get("filedir", ""):
+                        tgt["filename"] = p.name
+                        tgt["filedir"] = str(p.parent.absolute())
                         tgt_changed = True
+                    if not tgt.get("hash", ""):
+                        repo_hash = gitutil.git_head_hash(p)
+                        if repo_hash is not None:
+                            tgt["hash"] = repo_hash
+                            tgt_changed = True
             if tgt_changed:
+                _log.debug(f"setting report target: {tgt}")
                 self.set_report_target(**tgt)
 
         self._last_run_steps = []
@@ -336,7 +360,12 @@ class Runner:
                 except ValueError:
                     raise KeyError(f"Unknown step: {step_name}")
                 if step_name not in self._steps:
-                    raise KeyError(f"Empty step: {step_name}")
+                    if closest:
+                        _log.warning(
+                            f"Step {step_name} is empty, will run closest step"
+                        )
+                    else:
+                        raise KeyError(f"Empty step: {step_name}")
             step_range[i] = idx
 
         # check that first comes before last
@@ -345,34 +374,58 @@ class Runner:
                 "Steps out of order: {names[0]}={step_range[0]} > {names[1]}={step_range[1]}"
             )
 
-        # execute overall before-run action
-        for action in self._actions.values():
-            action.before_run()
-
-        # run each (defined) step
+        # Start with success, my friend
         self._failed = False
-        for i in range(step_range[0], step_range[1] + 1):
-            # check whether to skip endpoints in range
-            if (i == step_range[0] and not endpoints[0]) or (
-                i == step_range[1] and not endpoints[1]
-            ):
-                continue
-            # get the step associated with the index
-            step = self._steps.get(self._step_names[i], None)
-            # if the step is defined, run it
-            if step:
-                step.func(self._context)
-                self._last_run_steps.append(step.name)
-            if self._failed:
-                _log.error(f"Step failed: {self._failed[0]}")
-                break  # stop
+
+        # execute overall before-run action
+        for action_name, action in self._actions.items():
+            try:
+                action.before_run()
+            except Exception as err:
+                _log.error(
+                    f"{action_name} failed in 'before_run' (no other actions will be run)"
+                )
+                where = action_name + ".after_run"
+                self._failed = (where, err)
+                self._actions_failed[where] = err
+                break  # one failure => all failure
+
+        # run each (defined) step (if before did not fail)
+        if self._failed:
+            _log.error("Failures occurred in actions before run, skipping all steps")
+        else:
+            for i in range(step_range[0], step_range[1] + 1):
+                # check whether to skip endpoints in range
+                if (i == step_range[0] and not endpoints[0]) or (
+                    i == step_range[1] and not endpoints[1]
+                ):
+                    continue
+                # get the step associated with the index
+                step = self._steps.get(self._step_names[i], None)
+                # if the step is defined, run it
+                if step:
+                    step.func(self._context)
+                    self._last_run_steps.append(step.name)
+                if self._failed:
+                    _log.error(f"Step failed: {self._failed[0]}")
+                    break  # stop
 
         # execute overall after-run action
         if self._failed:
             _log.error("Run failed")
         else:
             for action in self._actions.values():
-                action.after_run()
+                try:
+                    action.after_run()
+                except Exception as err:
+                    _log.error(f"{action_name} failed in 'after_run'")
+                    if self._failed:
+                        _log.error("Multiple failures: only first will be reported")
+                    else:
+                        where = action_name + ".after_run"
+                        self._failed = (where, err)
+                        self._actions_failed[where] = err
+                    continue  # allow all after_run actions, only record first failure
 
     def _save_report(self):
         rpt = self.report()
@@ -426,6 +479,7 @@ class Runner:
         self._context = {}
         self._last_run_steps = []
         self._failed = False
+        self._actions_failed = {}
 
     def list_steps(self, all_steps=False) -> list[str]:
         """Get list of [runnable] steps."""
@@ -604,91 +658,6 @@ class Action(ABC):
     """The Action class implements a simple framework to run arbitrary
     functions before and/or after each step and/or run performed
     by the `Runner` class.
-
-    To create and use your own Action, inherit from this class
-    and then define one or more of the methods:
-
-    * before_step - Called before a given step is executed
-    * after_step - Called after a given step is executed
-    * before/after_substep - Called before/after a named
-      substep is executed (these can have arbitrary names)
-    * before_run - Called before the first step is executed
-    * after_run - Called after the last step is executed
-
-    Then add the action to the `Runner` class (e.g., `FlowsheetRunner`)
-    instance with `add_action()`. Note that you pass the action
-    *class*, not instance. Additional settings can be passed to
-    the created action instance with arguments to `add_action`.
-    Also note that the *name* argument is used to retrieve the
-    action instance later, as needed.
-
-    All actions must also implement the `report()` method,
-    which returns the results of the action to the caller
-    as either a Pydantic BaseModel subclass or a Python dict.
-
-    ### Example
-
-    Below is a simple example that prints a message
-    before/after every step and prints the total number
-    of steps run at the end of the run.
-
-    ```{code}
-    :caption: Runner HelloGoodbye class
-
-    from idaes_fi.structfs.runner import Action
-    class HelloGoodbye(Action):
-        "Example action, for tutorial purposes."
-
-        def __init__(self, runner, hello="hi", goodbye="bye", **kwargs):
-            super().__init__(runner, **kwargs)
-            self._hello, self._goodbye = hello, goodbye
-            self.step_counter = -1
-
-        def before_run(self):
-            self.step_counter = 0
-
-        def before_step(self, name):
-            print(f">> {self._hello} from step {name}")
-
-        def before_substep(self, name, subname):
-            print(f"  >> {self._hello} from sub-step {subname}")
-
-        def after_step(self, name):
-            print(f"<< {self._goodbye} from step {name}")
-            self.step_counter += 1
-
-        def after_substep(self, name, subname):
-            print(f"  << {self._goodbye} from sub-step {subname}")
-
-        def after_run(self):
-            print(f"Ran {self.step_counter} steps")
-
-        def report(self):
-            return {"steps": self.step_counter}
-    ```
-
-    You could add the above example to a Runner subclass,
-    here called `my_runner`, like this:
-
-    ```{code}
-    my_runner.add_action(
-        "hg",
-        HelloGoodbye,
-        hello="Greetings and salutations",
-        goodbye="Smell you later",
-    )
-    ```
-
-    Then, after running steps, you could print
-    the value of the *step_counter* attribute with:
-
-    ```{code}
-    print(my_runner.get_action("hg").step_counter)
-    ```
-
-    See the pre-defined actions in the
-    {py:mod}`runner_actions <idaes_fi.structfs.runner_actions>`
-    module, and their usage in the `FlowsheetRunner` class, for more examples.
     """
 
     def __init__(self, runner: Runner, log: Optional[logging.Logger] = None):

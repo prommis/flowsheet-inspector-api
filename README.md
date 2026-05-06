@@ -12,6 +12,13 @@ Developed as part of the Process Optimization & Modeling for Minerals Sustainabi
 - Import package: `idaes_fi`
 - Source layout: `src/idaes_fi`
 
+## Usage
+
+To run a flowsheet that is wrapped from the shell
+
+```bash
+```
+
 ## Development
 
 Install in editable mode with test dependencies:

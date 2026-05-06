@@ -14,7 +14,6 @@ import pytest
 from pydantic import BaseModel
 from ..runner import Runner, Action
 from .. import runner_actions
-from idaes.core.util.doctesting import Docstring
 
 ## -- setup --
 
@@ -138,23 +137,6 @@ def test_add_bad_step():
         @simple.substep("notrun-1", "sub")
         def do_bad3(ctx):
             return
-
-
-# load the HelloGoodbye class from the Action docstring
-HelloGoodbye = None  # pacify linters
-exec(Docstring(runner_actions.Action.__doc__).code("runner-hellogoodbye-class"))
-
-
-@pytest.mark.unit
-def test_hellogoodbye(tmp_simple_db):
-    simple.add_action(
-        "hg",
-        HelloGoodbye,
-        hello="Greetings and salutations",
-        goodbye="Smell you later",
-    )
-    simple.run_steps(first="-", last="-")
-    assert simple.get_action("hg").step_counter == 2
 
 
 class RunActionExample(Action):

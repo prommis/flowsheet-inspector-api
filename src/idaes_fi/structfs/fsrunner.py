@@ -129,6 +129,7 @@ class BaseFlowsheetRunner(Runner):
         Steps.set_operating_conditions,
         Steps.set_scaling,
         Steps.solve_initial,
+        Steps.set_autoscaling,
         Steps.add_costing,
         Steps.initialize_costing,
         Steps.setup_optimization,
@@ -253,57 +254,22 @@ class BaseFlowsheetRunner(Runner):
         """Annotate a Pyomo variable.
 
         Args:
-
-        - variable: Pyomo variable being annotated
-        - key: Key for this block in dict. Defaults to object name.
-        - title: Name / title of the block. Defaults to object name.
-        - desc: Description of the block. Defaults to object name.
-        - units: Units. Defaults to string value of native units.
-        - rounding: Significant digits
-        - is_input: Is this variable an input
-        - is_output: Is this variable an output
-        - input_category: Name of input grouping to display under
-        - output_category: Name of output grouping to display under
+            variable: Pyomo variable being annotated
+            key: Key for this block in dict. Defaults to object name.
+            title: Name / title of the block. Defaults to object name.
+            desc: Description of the block. Defaults to object name.
+            units: Units. Defaults to string value of native units.
+            rounding: Significant digits
+            is_input: Is this variable an input
+            is_output: Is this variable an output
+            input_category: Name of input grouping to display under
+            output_category: Name of output grouping to display under
 
         Returns:
-
-        - Input block (for chaining)
+             Input block (for chaining)
 
         Raises:
-
-        - ValueError: if `is_input` and `is_output` are both False
-
-        # Example
-
-        Here is an example of annotating a single Pyomo variable.
-        You can apply this same technique to any Pyomo, and thus IDAES,
-        object.
-
-        ```{code}
-        :name: annotate_vars
-        from idaes_fi.structfs.fsrunner import FlowsheetRunner
-        from pyomo.environ import *
-
-        def example(f: FlowsheetRunner):
-            v = Var()
-            v.construct()
-            f.annotate_var(v, key="example", title="Example variable").fix(1)
-        ```
-
-        To retrieve the annotated variables, use the `annotated_vars`
-        property:
-
-        ```{code}
-        example(fr := FlowsheetRunner())
-        print(fr.annotated_vars)
-        # prints something like this:
-        # {'example': {'var': <pyomo.core.base.var.ScalarVar object at 0x762ffb124b40>,
-        # 'fullname': 'ScalarVar', 'title': 'Example variable',
-        # 'description': 'ScalarVar', 'units': 'dimensionless',
-        # 'rounding': 3, 'is_input': True, 'is_output': True, 'input_category': 'main',
-        # 'output_category': 'main'}}
-        ```
-
+            ValueError: if `is_input` and `is_output` are both False
         """
         if not is_input and not is_output:
             raise ValueError("One of 'is_input', 'is_output' must be True")
@@ -342,76 +308,6 @@ class DiagnosticReportType(Enum):
 class FlowsheetRunner(BaseFlowsheetRunner):
     """Interface for running and inspecting IDAES flowsheets."""
 
-    class DegreesOfFreedom:
-        """Wrapper for the UnitDofChecker action"""
-
-        def __init__(self, runner):
-            """Create the degrees-of-freedom helper.
-
-            Args:
-                runner: Flowsheet runner that owns the underlying action.
-            """
-            from .runner_actions import UnitDofChecker  # pylint: disable=C0415
-
-            # check DoF after build, initial solve, and optimization solve
-            self._a = runner.add_action(
-                "degrees_of_freedom",
-                UnitDofChecker,
-                "fs",
-                ["build", "solve_initial", "solve_optimization"],
-            )
-            self._rnr = runner
-
-        def model(self):
-            """Get the model."""
-            return self._a.get_dof_model()
-
-        def __getattr__(self, name):
-            """Naming the step prints a summary of that step."""
-            if name not in set(self._rnr.list_steps()):
-                raise AttributeError(f"No step named '{name}'")
-            self._a.summary(step=name)
-
-        def __str__(self):
-            return self._a.summary(stream=None)
-
-        def _ipython_display_(self):
-            self._a.summary()
-
-    class Timings:
-        """Wrapper for the Timer action"""
-
-        def __init__(self, runner):
-            """Create the timings helper.
-
-            Args:
-                runner: Flowsheet runner that owns the underlying action.
-            """
-            from .runner_actions import Timer  # pylint: disable=C0415
-
-            self._a: Timer = runner.add_action("timings", Timer)
-
-        @property
-        def values(self) -> list[dict]:
-            """Get timing values."""
-            return self._a.get_history()
-
-        @property
-        def history(self) -> str:
-            """Get a text report of the timing history"""
-            h = []
-            for i in range(len(self._a)):
-                h.append(f"== Run {i + 1} ==")
-                h.append("")
-                h.append(self._a.summary(run_idx=i))
-            return "\n".join(h)
-
-        def __str__(self):
-            return self._a.summary()
-
-        def _ipython_display_(self):
-            self._a._ipython_display_()  # pylint: disable=protected-access
-
     def __init__(self, solve_steps: list[str] = None, **kwargs):
         """Initialize a flowsheet runner with default inspection actions.
 
@@ -421,17 +317,24 @@ class FlowsheetRunner(BaseFlowsheetRunner):
                 `BaseFlowsheetRunner`.
         """
         from .runner_actions import (  # pylint: disable=C0415
+            Timer,
             CaptureSolverOutput,
             GetSolverResults,
             ModelVariables,
             MermaidDiagram,
             Diagnostics,
             StreamTable,
+            UnitDofChecker,
         )
 
         super().__init__(**kwargs)
-        self.dof = self.DegreesOfFreedom(self)
-        self.timings = self.Timings(self)
+        self.add_action(ActionNames.TIMINGS.value, Timer)
+        self.add_action(
+            ActionNames.DOF.value,
+            UnitDofChecker,
+            "fs",
+            [Steps.build, Steps.solve_initial, Steps.solve_optimization],
+        )
         self.add_action(ActionNames.SOLVER_OUTPUT.value, CaptureSolverOutput)
         self.add_action(ActionNames.SOLVER_RESULTS.value, GetSolverResults)
         self.add_action(ActionNames.DIAGNOSTICS.value, Diagnostics)
@@ -473,7 +376,11 @@ class FlowsheetRunner(BaseFlowsheetRunner):
 
 
 def run_flowsheet(
-    module_or_path: str, fs_attr: str = "", step_kw: dict[str, str] = None, **kwargs
+    module_or_path: str,
+    fs_attr: str = "",
+    step_kw: dict[str, str] = None,
+    report_db_file: str = None,
+    **kwargs,
 ) -> BaseFlowsheetRunner:
     """Run structfs-wrapper flowsheet found in a file or module.
 
@@ -482,6 +389,7 @@ def run_flowsheet(
         fs_attr: Used to select among multiple flowsheet wrappers in the same module.
                  If not given use the first one found, otherwise require a match.
         step_kw: Keywords sent to the `run_steps()` function, if applicable
+        report_db_file: If given, set the report DB to this file
         kwargs: Additional keyword arguments passed to fi_main, if applicable
 
     Returns:
@@ -511,6 +419,8 @@ def run_flowsheet(
         fs.set_report_target(**target_kw)
         if step_kw is None:
             step_kw = {}
+        if report_db_file is not None:
+            fs.set_report_db(dbfile=report_db_file)
         fs.run_steps(**step_kw)
     else:
         func = _find_wrapped_main(mod)
@@ -586,11 +496,33 @@ def _find_wrapped_main(a_module) -> FunctionType | None:
     return None
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("name")
-    ap.add_argument("--attr", default=None)
-    ap.add_argument("--last", default=None)
+def main(args=None):
+    """Run a flowsheet from the command-line."""
+    try:
+        default_report_file = Runner.get_default_report_db().filename
+    except ValueError:
+        default_report_file = "?unknown?"
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    ap.add_argument("name", help="Flowsheet file name or module name")
+    ap.add_argument(
+        "--db",
+        "-D",
+        help=f"Alternate SQLite database file for results (default=~{default_report_file})",
+        default=None,
+    )
+    ap.add_argument(
+        "--attr",
+        default=None,
+        help="Name of attribute in file/module "
+        "containing structured flowsheet (e.g., 'FS'). "
+        "This is only needed if there is more than one.",
+    )
+    steppenlist = ", ".join(Steps.index)
+    ap.add_argument(
+        "--last",
+        default=None,
+        help=f"Name of last step to run. Steps (in order): {steppenlist}",
+    )
     ap.add_argument(
         "-q",
         "--quiet",
@@ -598,19 +530,47 @@ if __name__ == "__main__":
         default=False,
         help="Don't print extra info",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "-v", action="count", default=0, help="increase verbosity", dest="vb"
+    )
+    args = ap.parse_args(args=args)
+
+    log = logging.getLogger("idaes_fi")
+    h = logging.StreamHandler()
+    h.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] fi-run: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    log.addHandler(h)
+    if args.vb > 1:
+        log.setLevel(logging.DEBUG)
+    elif args.vb == 1:
+        log.setLevel(logging.INFO)
+    else:
+        if args.quiet:
+            log.setLevel(logging.ERROR)
+        else:
+            log.setLevel(logging.WARNING)
+    log.propagate = False
 
     kwargs = {}
     if args.attr is not None:
         kwargs["fs_attr"] = args.attr
     if args.last is not None:
-        kwargs["step_kw"] = {"last": args.last}
+        kwargs["step_kw"] = {"last": args.last, "closest_step": True}
+
+    if args.db is not None:
+        log.info(f"Writing report to user-specified file: {args.db}")
+    else:
+        log.debug(f"Writing report to default file: {default_report_file}")
 
     try:
-        fs = run_flowsheet(args.name, **kwargs)
+        fs = run_flowsheet(args.name, report_db_file=args.db, **kwargs)
     except ValueError as err:
         print(f"ERROR: {str(err)}")
-        sys.exit(1)
+        return 1
 
     # unless the user requests, print solver output
     # (that we captured to the DB)
@@ -628,3 +588,7 @@ if __name__ == "__main__":
             print(o)
 
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

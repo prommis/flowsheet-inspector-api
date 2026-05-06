@@ -20,16 +20,13 @@ from .. import fsrunner
 from ..fsrunner import (
     FlowsheetRunner,
     BaseFlowsheetRunner,
-    _find_global_flowsheet,
-    _find_wrapped_main,
     Context,
     run_flowsheet,
 )
-from ..common import ActionNames
+from ..common import ActionNames, Steps
 
 from .flash_flowsheet import FS as flash_fs
 import idaes_fi.structfs as structfs
-from idaes.core.util.doctesting import Docstring
 from pyomo.environ import assert_optimal_termination
 
 
@@ -39,12 +36,88 @@ def set_tmp_db(fs, p):
 
 
 @pytest.mark.unit
+def test_context_accessors():
+    model = ConcreteModel()
+    solver = SimpleNamespace()
+    ctx = Context(model=model, solver=solver, tee=False)
+
+    assert ctx.model is model
+    assert ctx.solver is solver
+    assert ctx.tee is False
+    assert ctx.results == {}
+    assert "results" not in ctx
+
+    new_model = ConcreteModel()
+    new_solver = SimpleNamespace()
+    results = SimpleNamespace()
+    ctx.model = new_model
+    ctx.solver = new_solver
+    ctx.results = results
+
+    assert ctx["model"] is new_model
+    assert ctx["solver"] is new_solver
+    assert ctx["results"] is results
+    assert ctx.model is new_model
+    assert ctx.solver is new_solver
+    assert ctx.results is results
+
+
+@pytest.mark.unit
+def test_context_solve_uses_configured_solver():
+    model = ConcreteModel()
+    results = SimpleNamespace()
+    solver = SimpleNamespace(calls=[])
+
+    def solve(model_arg, tee):
+        solver.calls.append((model_arg, tee))
+        return results
+
+    solver.solve = solve
+    ctx = Context(model=model, solver=solver, tee=True)
+
+    ctx.solve()
+
+    assert len(solver.calls) == 1
+    assert solver.calls[0][0] is model
+    assert solver.calls[0][1] is True
+    assert ctx.results is results
+
+
+@pytest.mark.unit
+def test_context_solve_builds_default_solver(monkeypatch):
+    model = ConcreteModel()
+    results = SimpleNamespace()
+    solver = SimpleNamespace(calls=[])
+    created = []
+
+    def solve(model_arg, tee):
+        solver.calls.append((model_arg, tee))
+        return results
+
+    def solver_factory(name):
+        created.append(name)
+        solver.solve = solve
+        return solver
+
+    monkeypatch.setattr(fsrunner, "SolverFactory", solver_factory)
+    ctx = Context(model=model, solver=None, tee=False)
+
+    ctx.solve()
+
+    assert created == [fsrunner.DEFAULT_SOLVER_NAME]
+    assert ctx.solver is solver
+    assert len(solver.calls) == 1
+    assert solver.calls[0][0] is model
+    assert solver.calls[0][1] is False
+    assert ctx.results is results
+
+
+@pytest.mark.unit
 def test_annotation(tmp_path):
     set_tmp_db(flash_fs, tmp_path)
 
     runner = flash_fs
-    runner.run_steps("build")
-    print(runner.timings.history)
+    runner.run_steps(Steps.build)
 
     ann = runner.annotate_var  # alias
     flash = runner.model.fs.flash  # alias
@@ -64,6 +137,9 @@ def test_annotation(tmp_path):
     ann(flash.inlet.mole_frac_comp[0, "toluene"], **kw).fix(0.5)
     ann(flash.heat_duty, **kw).fix(0)
     ann(flash.deltaP, is_input=False, **kw).fix(0)
+    with pytest.raises(ValueError):
+        # won't even look at variable before failing
+        ann(None, is_input=False, is_output=False)
 
     ann = runner.annotated_vars
     print("-" * 40)
@@ -80,62 +156,147 @@ def test_annotation(tmp_path):
     assert ann["fs.flash.deltaP"]["is_input"] == False
 
 
-#####
-# Test the code blocks in the structfs/__init__.py
-#####
+def test_base_flowsheet_runner():
+    runner = BaseFlowsheetRunner()
+    # build step is 1st step by default
+    assert runner.build_step == BaseFlowsheetRunner.STEPS[0]
 
-# pacify linters:
-sfi_before_build_model = sfi_before_set_operating_conditions = sfi_before_init_model = (
-    sfi_before_solve
-) = lambda x: None
-SolverStatus, FS = None, None
+    solver = SimpleNamespace()
+    tee = False
+    solver_options = {"options": 1}
+    runner = BaseFlowsheetRunner(solver=solver, tee=tee, solver_options=solver_options)
 
-#  load the functions from the docstring
-_ds1 = Docstring(structfs.__doc__)
-exec(_ds1.code("before", func_prefix="sfi_before_"))
-exec(_ds1.code("after", func_prefix="sfi_after_"))
-
-
-@pytest.mark.unit
-def test_sfi_before():
-    m = sfi_before_build_model()
-    sfi_before_set_operating_conditions(m)
-    sfi_before_init_model(m)
-    result = sfi_before_solve(m)
-    assert result.solver.status == SolverStatus.ok
+    for target_kw, ok in (({}, True), ({"foo": 1}, False)):
+        if ok:
+            runner = BaseFlowsheetRunner(**target_kw)
+        else:
+            with pytest.raises(KeyError):
+                runner = BaseFlowsheetRunner(**target_kw)
 
 
-@pytest.mark.unit
-def test_sfi_after(tmp_path):
-    set_tmp_db(FS, tmp_path)
+def test_base_flowsheet_runner_set_solve_steps():
+    # whether the "solve_steps"
+    class SolveStepAction:
+        def __init__(self, runner):
+            self.runner = runner
+            self.solve_steps = ["solve_initial"]
 
-    FS.run_steps()
-    assert FS.results.solver.status == SolverStatus.ok
+    class OtherAction:
+        def __init__(self, runner):
+            self.runner = runner
 
+    runner = BaseFlowsheetRunner()
+    first = runner.add_action("first", SolveStepAction)
+    second = runner.add_action("second", SolveStepAction)
+    other = runner.add_action("other", OtherAction)
+    solve_steps = ["custom_solve", "custom_optimize"]
 
-# pacify linters
-annotate_vars_example = lambda x: None
-# load example function from docstring
-_ds2 = Docstring(BaseFlowsheetRunner.annotate_var.__doc__)
-exec(_ds2.code("annotate_vars"))
+    runner.set_solve_steps(solve_steps)
 
-
-@pytest.mark.unit
-def test_ann_docs():
-    annotate_vars_example(fr := FlowsheetRunner())
-    ex = fr.annotated_vars["example"]
-    assert ex["fullname"] == "ScalarVar"
-    assert ex["title"] == "Example variable"
-
-
-#####
-# Test utilities to find wrapped functions
-#####
+    assert first.solve_steps == solve_steps
+    assert second.solve_steps == solve_steps
+    assert not hasattr(other, "solve_steps")
 
 
-@pytest.mark.unit
-def test_find_wrapped():
-    from . import test_simple_wrap
+@pytest.mark.parametrize("runnerclass", [BaseFlowsheetRunner, FlowsheetRunner])
+def test_flowsheet_runner_run_steps(runnerclass):
+    calls = []
+    solver = SimpleNamespace(options={})
+    s_build, s_init, s_solve = Steps.build, Steps.initialize, Steps.solve_initial
+    runner = runnerclass(
+        solver=solver,
+        tee=False,
+        steps=(s_build, s_init, s_solve),
+    )
 
-    assert _find_global_flowsheet(test_simple_wrap) == {}
-    assert _find_wrapped_main(test_simple_wrap)
+    @runner.step(s_build)
+    def build(ctx):
+        calls.append(s_build)
+        assert isinstance(ctx.model, ConcreteModel)
+        assert isinstance(ctx.model.fs, FlowsheetBlock)
+        assert ctx.solver is solver
+        assert ctx.tee is False
+        ctx.model.fs.marker = Var(initialize=1)
+
+    @runner.step(s_init)
+    def initialize(ctx):
+        calls.append(s_init)
+        assert isinstance(ctx.model, ConcreteModel)
+
+    @runner.step(s_solve)
+    def solve_initial(ctx):
+        calls.append(s_solve)
+
+    def extra_checks(runner):
+        if runnerclass is FlowsheetRunner:
+            assert runner.failed
+            assert "stream_table.after_run" in runner.failed_actions
+
+    runner.run_steps(save_report=False)
+    extra_checks(runner)
+
+    initial_model = runner.model
+    assert calls == [s_build, s_init, s_solve]
+    assert initial_model.fs.marker.value == 1
+
+    calls.clear()
+    runner.run_steps(first=s_init, last=s_solve, save_report=False)
+    extra_checks(runner)
+
+    assert calls == [s_init, s_solve]
+    assert runner.model is initial_model
+
+    calls.clear()
+    runner.run_steps(first=s_build, last=s_build, save_report=False)
+    extra_checks(runner)
+
+    rebuilt_model = runner.model
+    assert calls == [s_build]
+    assert rebuilt_model is not initial_model
+    assert hasattr(rebuilt_model.fs, "marker")
+
+    calls.clear()
+    runner.run_steps(after=s_build, before=s_solve, save_report=False)
+
+    # call some syntactic sugar methods
+    if runnerclass is FlowsheetRunner:
+        for sugar in ("build", "solve_initial"):
+            calls.clear()
+            getattr(runner, sugar)()
+        runner.show_diagram()
+
+
+@pytest.fixture
+def empty_fsrunner():
+    s_build, s_init, s_solve = Steps.build, Steps.initialize, Steps.solve_initial
+    runner = FlowsheetRunner(
+        steps=(s_build, s_init, s_solve),
+    )
+
+    @runner.step(s_build)
+    def build(ctx):
+        ctx.model = ConcreteModel()
+
+    @runner.step(s_init)
+    def initialize(ctx):
+        print("initialize")
+
+    @runner.step(s_solve)
+    def solve_initial(ctx):
+        print("solve")
+
+    return runner
+
+
+def test_with_no_connectivity(empty_fsrunner):
+    save, fsrunner.Connectivity = fsrunner.Connectivity, None
+    empty_fsrunner.show_diagram()
+    fsrunner.Connectivity = save
+
+
+@pytest.mark.parametrize(
+    "solver_name,solver_opts", [("ipopt", {}), ("ipopt", {"tee": True})]
+)
+def test_set_solver_baseflowsheetrunner_init(solver_name, solver_opts):
+    runner = BaseFlowsheetRunner(solver=solver_name, solver_options=solver_opts)
+    runner.run_steps()

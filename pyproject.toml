@@ -32,13 +32,27 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "mypy>=1.10",
-  "mystmd>=1.8.3",
+  "sphinx>=9",
+  "jupyter-book>=2.0.0",
+
+  "sphinx-autodoc2>=0.5",
+  "sphinxcontrib-napoleon>=0.5.0",
+  "sphinx-argparse==0.5.2",
+  "sphinx-book-theme<=1.1.2,>=1.0.0",
+  "sphinx-copybutton==0.5.2",
+  "nbsphinx",  # for Jupyter Notebooks in the docs
+
   "pytest>=8",
+  "pytest-cov",
   "black>=26",
 ]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[project.scripts]
+fi-copy = "idaes_fi.scripts.copy_template:main"
+fi-run = "idaes_fi.structfs.fsrunner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

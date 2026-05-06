@@ -6,12 +6,18 @@ on:
 jobs:
   test:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: [ "3.11", "3.12", "3.13" ]
 
     steps:
+      - name: Set up Conda environment
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: flowsheet-inspector
+          python-version: ${{ matrix.python-version }}
+
       - name: Check out repository
         uses: actions/checkout@v4
 
@@ -23,6 +29,23 @@ jobs:
 
       - name: Install package
         run: python -m pip install ".[dev]"
+
+      - name: Install extensions
+        shell: bash -l {0}
+        run: |
+          echo '::group::Output of "idaes get-extensions" command'
+          idaes get-extensions --verbose
+          echo '::endgroup::'
+
+      - name: Display environment info
+        shell: bash -l {0}
+        run: |
+          echo '::group::Output of "conda list"'
+          conda list
+          echo '::endgroup::'
+          echo '::group::Output of "pip list"'
+          pip list
+          echo '::endgroup::'
 
       - name: Run pytest
         run: python -m pytest src
