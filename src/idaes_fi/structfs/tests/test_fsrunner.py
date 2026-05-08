@@ -288,6 +288,20 @@ def empty_fsrunner():
     return runner
 
 
+@pytest.fixture
+def empty_fsrunner_build_only():
+    s_build, s_init, s_solve = Steps.build
+    runner = FlowsheetRunner(
+        steps=(s_build,),
+    )
+
+    @runner.step(s_build)
+    def build(ctx):
+        ctx.model = ConcreteModel()
+
+    return runner
+
+
 def test_with_no_connectivity(empty_fsrunner):
     save, fsrunner.Connectivity = fsrunner.Connectivity, None
     empty_fsrunner.show_diagram()
@@ -299,4 +313,9 @@ def test_with_no_connectivity(empty_fsrunner):
 )
 def test_set_solver_baseflowsheetrunner_init(solver_name, solver_opts):
     runner = BaseFlowsheetRunner(solver=solver_name, solver_options=solver_opts)
+    runner.run_steps()
+
+
+def test_set_solver_baseflowsheetrunner(empty_fsrunner_build_only):
+    runner = empty_fsrunner_build_only
     runner.run_steps()
