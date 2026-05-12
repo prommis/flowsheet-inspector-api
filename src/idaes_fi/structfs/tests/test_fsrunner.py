@@ -536,9 +536,13 @@ def test_fsrunner_main_no_default_report_db(monkeypatch, capsys):
         pass
 
     captured = capsys.readouterr()
+
     for line in captured.out.split("\n"):
         line = line.strip()
         print(f"CAPTURED: {line}")
+
+    for line in captured.out.split("\n"):
+        line = line.strip()
         if line.startswith("--db"):
             assert "default=?unknown?" in line
 
