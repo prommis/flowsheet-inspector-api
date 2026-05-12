@@ -14,9 +14,11 @@
 Common constants and functions
 """
 
+import argparse
 from collections import OrderedDict
 from enum import Enum
 import importlib
+import json
 from pathlib import Path
 import os
 import sys
@@ -151,3 +153,24 @@ def load_module(module_or_path: str | Path):
         return importlib.import_module(module_name)
     else:
         raise RuntimeError("Logic error")  # should not get here
+
+
+def main(*cmdline):
+    parser = argparse.ArgumentParser(
+        description="List standard structured flowsheet steps"
+    )
+    parser.add_argument(
+        "-F", "--format", help="Output format", choices=["json", "text"], default="json"
+    )
+    args = parser.parse_args(*cmdline)
+
+    if args.format == "json":
+        json.dump(Steps.index, sys.stdout)
+    else:
+        for name in Steps.index:
+            print(name)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -53,6 +53,7 @@ package-dir = {"" = "src"}
 [project.scripts]
 fi-copy = "idaes_fi.scripts.copy_template:main"
 fi-run = "idaes_fi.structfs.fsrunner:main"
+fi-steps = "idaes_fi.structfs.common:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
