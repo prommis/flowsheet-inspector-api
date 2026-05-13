@@ -47,5 +47,10 @@ jobs:
           pip list
           echo '::endgroup::'
 
-      - name: Run pytest
-        run: python -m pytest src
+      - name: Run pytest with coverage
+        run: >
+          python -m pytest src
+          --cov=idaes_fi
+          --cov-report=term-missing
+          --cov-report=xml
+          --cov-fail-under=85
