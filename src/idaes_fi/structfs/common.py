@@ -224,7 +224,7 @@ def _get_steps_for_flowsheet(fs: str, fs_attr: str | None) -> list[str]:
 
 def main(*cmdline):
     parser = argparse.ArgumentParser(
-        description="List (standard) structured flowsheet steps"
+        description="List (standard) structured flowsheet steps", add_help=True
     )
     parser.add_argument(
         "--fs",
@@ -244,7 +244,10 @@ def main(*cmdline):
     parser.add_argument(
         "-t", "--format", help="Output format", choices=["json", "text"], default="json"
     )
-    args = parser.parse_args(cmdline)
+    if cmdline:
+        args = parser.parse_args(cmdline)
+    else:
+        args = parser.parse_args()
 
     steps_list = None
     if args.fs is None:
@@ -270,4 +273,5 @@ def main(*cmdline):
 
 
 if __name__ == "__main__":
+    print(sys.argv)
     sys.exit(main())

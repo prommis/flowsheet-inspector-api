@@ -24,8 +24,15 @@ details.
 ## Command-line (shell)
 
 You can run a flowsheet from the command-line with `fi-run`.
+You can list the steps in a flowsheet (or all possible ones) with the command-line program `fi-steps`.
 
-### Usage
+### fi-run usage
+
+The `fi-run` command lets you run a flowsheet from the command-line.
+The results of that run (the report) are stored in the default database,
+unless the user provides an alternate database.
+Additional options help to select which flowsheet to run and which
+steps to run ("up to" a given step).
 
 ```{code} text
 $ fi-run -h
@@ -48,7 +55,7 @@ options:
   -v           increase verbosity
 ```
 
-### Examples
+### fi-run examples
 
 To run the structured flowsheet in `excellent_flowsheet.py` in the current
 directory:
@@ -62,6 +69,69 @@ directory, use the `--attr` flag to indicate the one you want.
 
 ```{code} shell
 fi-run excellent_flowsheet.py --attr fs1
+```
+
+### fi-steps usage
+
+The term "steps" refers to one distinct stage of building or solving a flowsheet.
+See the full description in the [sample notebook for the API](api) for details.
+The `fi-steps` command allows you to see which steps are defined for a given
+flowsheet. This is useful for higher-level interfaces to show the users what steps
+they can run, so the default output is machine-readable JSON. However, since it may also be
+handy in some cases for interactive use, a simple text output is also available.
+ 
+```{code} text
+usage: fi-steps [-h] [--fs FLOWSHEET] [--attr ATTR] [-t {json,text}]
+
+List (standard) structured flowsheet steps
+
+options:
+  -h, --help            show this help message and exit
+  --fs FLOWSHEET        Show steps implemented in FLOWSHEET, which is a module or file, instead of all standard
+                        steps
+  --attr ATTR           Name of attribute in file/module containing structured flowsheet (e.g., 'FS'). This is
+                        ignored without '--fs' option, and only needed if there is more than one
+  -t, --format {json,text}
+                        Output format
+```
+
+### fi-steps examples
+
+To get steps for the test/demo flowsheet, using its module path:
+
+```{code} shell
+$ fi-steps --fs idaes_fi.structfs.tests.demo_flowsheet_structured
+["build", "set_solver", "set_operating_conditions", "set_scaling", "solve_initial", "solve_optimization"]
+```
+
+To get steps for the "FS2" flowsheet in a test/demo with multiple structured
+flowsheets defined, using the file path and with output as plain text (not JSON):
+
+```{code} shell
+$ fi-steps --fs idaes_fi.structfs.tests.demo_flowsheet_structured_multi --attr FS2 -t text
+build
+set_solver
+set_operating_conditions
+set_scaling
+solve_initial
+solve_optimization
+```
+
+To see all possible steps (in order), as plain text
+
+```{code} shell
+$ fi-steps --format text
+build
+set_solver
+initialize
+set_operating_conditions
+set_scaling
+solve_initial
+set_autoscaling
+add_costing
+initialize_costing
+setup_optimization
+solve_optimization
 ```
 
 ## Python API in a script
