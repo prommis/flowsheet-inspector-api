@@ -236,7 +236,7 @@ def test_flowsheet_runner_run_steps(runnerclass):
     def extra_checks(runner):
         if runnerclass is FlowsheetRunner:
             assert runner.failed
-            assert "stream_table.after_run" in runner.failed_actions
+            assert len(runner.failed_actions) == 1  # stop after 1 failure
 
     runner.run_steps(save_report=False)
     extra_checks(runner)

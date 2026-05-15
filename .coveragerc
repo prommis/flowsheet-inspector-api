@@ -4,6 +4,7 @@ omit =
     */tests/*
     test/*
     */test/*
+    copy_template.py
 
 [report]
 omit =
@@ -11,3 +12,4 @@ omit =
     */tests/*
     test/*
     */test/*
+    copy_template.py

@@ -330,22 +330,21 @@ class FlowsheetRunner(BaseFlowsheetRunner):
             Diagnostics,
             StreamTable,
             UnitDofChecker,
+            UnitModelReport,
         )
 
         super().__init__(**kwargs)
-        self.add_action(ActionNames.TIMINGS.value, Timer)
-        self.add_action(
-            ActionNames.DOF.value,
-            UnitDofChecker,
-            "fs",
-            [Steps.build, Steps.solve_initial, Steps.solve_optimization],
-        )
+        dof_steps = [Steps.build, Steps.solve_initial, Steps.solve_optimization]
+
+        self.add_action(ActionNames.DIAGNOSTICS.value, Diagnostics)
+        self.add_action(ActionNames.DOF.value, UnitDofChecker, "fs", dof_steps)
+        self.add_action(ActionNames.MERMAID_DIAGRAM.value, MermaidDiagram)
+        self.add_action(ActionNames.MODEL_REPORTS.value, UnitModelReport)
+        self.add_action(ActionNames.MODEL_VARIABLES.value, ModelVariables)
         self.add_action(ActionNames.SOLVER_OUTPUT.value, CaptureSolverOutput)
         self.add_action(ActionNames.SOLVER_RESULTS.value, GetSolverResults)
-        self.add_action(ActionNames.DIAGNOSTICS.value, Diagnostics)
-        self.add_action(ActionNames.MODEL_VARIABLES.value, ModelVariables)
-        self.add_action(ActionNames.MERMAID_DIAGRAM.value, MermaidDiagram)
         self.add_action(ActionNames.STREAM_TABLE.value, StreamTable)
+        self.add_action(ActionNames.TIMINGS.value, Timer)
 
     def build(self):
         """Run just the build step"""

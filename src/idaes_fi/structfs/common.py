@@ -37,13 +37,14 @@ RESULT_FLOWSHEET_KEY = "__fi"
 
 
 class ActionNames(Enum):
+    DIAGNOSTICS = "diagnostics"
+    DOF = "degrees_of_freedom"
+    MERMAID_DIAGRAM = "mermaid_diagram"
+    MODEL_REPORTS = "model_reports"
+    MODEL_VARIABLES = "model_variables"
     SOLVER_OUTPUT = "solver_output"
     SOLVER_RESULTS = "solver_results"
-    DIAGNOSTICS = "diagnostics"
-    MODEL_VARIABLES = "model_variables"
-    MERMAID_DIAGRAM = "mermaid_diagram"
     STREAM_TABLE = "stream_table"
-    DOF = "degrees_of_freedom"
     TIMINGS = "timings"
 
 

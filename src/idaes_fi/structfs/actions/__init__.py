@@ -32,6 +32,7 @@ __all__ = [
     "Timer",
     "UnitDofChecker",
     "UnitDofType",
+    "UnitModelReport",
 ]
 
 _EXPORT_MODULES = {
@@ -46,6 +47,7 @@ _EXPORT_MODULES = {
     "Timer": "timer",
     "UnitDofChecker": "unit_dof_checker",
     "UnitDofType": "unit_dof_checker",
+    "UnitModelReport": "model_report",
 }
 
 

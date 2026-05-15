@@ -426,7 +426,7 @@ class Runner:
         if self._failed:
             _log.error("Run failed")
         else:
-            for action in self._actions.values():
+            for action_name, action in self._actions.items():
                 try:
                     action.after_run()
                 except Exception as err:
