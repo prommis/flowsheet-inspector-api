@@ -18,7 +18,7 @@
 
 # stdlib
 import pprint
-import time
+from types import SimpleNamespace
 
 import pytest
 from pytest import approx
@@ -33,6 +33,7 @@ from ..actions import (
     StreamTable,
     CaptureSolverOutput,
     GetSolverResults,
+    UnitModelReport,
 )
 from . import flash_flowsheet
 
@@ -41,6 +42,7 @@ from . import flash_flowsheet
 def set_tmp_db(tmp_path):
     dbpath = tmp_path / "test_runner_actions.db"
     flash_flowsheet.FS.set_report_db(dbfile=dbpath)
+    return dbpath
 
 
 class FakeRunner:
@@ -291,3 +293,38 @@ def test_get_solver_results(failed):
         # Check that ScalarData values were copied over
         assert r.values["value"] == added_value.value
         assert r.values["dvalue"] == added_dict.value
+
+
+@pytest.mark.integration
+def test_unit_model_report(set_tmp_db):
+    struct_fs = flash_flowsheet.FS
+    struct_fs.build()
+    runner = FakeRunner()
+    runner.model = struct_fs.model
+    rpt_action = UnitModelReport(runner)
+    rpt_action.after_step("step1")
+
+    rpt = rpt_action.report()
+    assert rpt
+    print(rpt.model_dump_json(indent=2))
+
+    last = rpt.step_reports[rpt.last_step].reports
+    # expect 2 components
+    assert len(last) == 2
+    for expected in ("fs.flash", "fs.flash.split"):
+        assert expected in last
+
+
+@pytest.mark.unit
+def test_unit_model_report_bad_perf():
+    action = UnitModelReport(FakeRunner())
+    # this component will trigger both the missing-var-section in performance contents
+    # and the attribute error for _get_stream_table_contents
+    comp = SimpleNamespace(
+        {
+            "_get_performance_contents": lambda time_point: {"foo": {}},
+        }
+    )
+    action._dof = False  # avoids calls involving `comp`
+    print("> get report")
+    action._get_report(comp)
